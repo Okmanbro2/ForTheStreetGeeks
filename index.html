@@ -374,6 +374,31 @@ function edgeExtraExtent(extras){
   return {left,right};
 }
 
+/* Extras are stored per-edge relative to that edge's OWN nodeChain
+   direction (start->end). When edges are stitched into a chain, some
+   are traversed reversed relative to their own storage direction —
+   reversing direction of travel swaps which physical side is "left" vs
+   "right". These helpers translate between an edge's raw stored extras
+   and the extras as they'd be understood facing the chain's shared
+   direction of travel, so matching lane configs on physically-connected
+   roads are recognized as the same, and so bands are drawn on the
+   correct physical side regardless of how the edge happens to be
+   stored. */
+function flipExtrasLR(extras){
+  const out={};
+  EXTRA_LANE_TYPES.forEach(t=>{ out[t.id] = { left: !!extras[t.id].right, right: !!extras[t.id].left }; });
+  return out;
+}
+function cloneExtras(extras){
+  const out={};
+  EXTRA_LANE_TYPES.forEach(t=>{ out[t.id] = { left: !!extras[t.id].left, right: !!extras[t.id].right }; });
+  return out;
+}
+function orientedExtras(edge, dir){
+  const ex = edgeExtras(edge);
+  return dir ? ex : flipExtrasLR(ex);
+}
+
 const ROAD_FAMILIES = [
   { baseId:'twoway',  key:'1', variants:['twoway','twoway2'] },
   { baseId:'oneway',  key:'2', variants:['oneway','oneway2','oneway3'] },
@@ -757,7 +782,8 @@ function commitBuild(name){
   }
 
   hardConnectEndpoints(newEdgeId);
-  _jrCache = {}; _nodeEdgeIndex = null;
+  _jrCache = {}; _nodeEdgeIndex = null; _chainCache = null;
+  unifyChainMetadata();
   build=null;
 }
 
@@ -1019,6 +1045,282 @@ function edgeFullHalfWidth(edge){
   return rt.width / 2 + Math.max(ext.left, ext.right);
 }
 
+/* ---------------------------------------------------------------------
+   Road "chains": runs of edges of the SAME road type that meet at a
+   plain pass-through node (exactly 2 edges at that node, not a real
+   junction and not a lane-branch attach point). Decorations (lane
+   markings, median bands, extra-lane bands/pavement) are rendered once
+   per chain using one continuous concatenated spine, instead of once
+   per edge. offsetPoly() already miters correctly at interior points of
+   a single polyline, so feeding it a continuous multi-edge spine makes
+   markings/bands hug a bend instead of breaking at it.
+--------------------------------------------------------------------- */
+let _chainCache = null, _chainCacheEpoch = -1;
+let _chainOfEdge = null;
+
+function buildEdgeChains(){
+  const visited = new Set();
+  const chains = [];
+  for(const edge of allEdges()){
+    if(visited.has(edge.id)) continue;
+    const edgeIds = [edge.id];
+    const dirs = [true];
+    visited.add(edge.id);
+
+    let curEndNode = edge.nodeChain[edge.nodeChain.length-1];
+    while(true){
+      const node = getNode(curEndNode);
+      if(node && node.laneBranch) break;
+      const atNode = edgesAtNode(curEndNode);
+      if(atNode.length !== 2) break;
+      const nxt = atNode.find(e2 => !visited.has(e2.id));
+      if(!nxt) break;
+      if(nxt.typeId !== edge.typeId) break;
+      const nxtDir = nxt.nodeChain[0] === curEndNode;
+      edgeIds.push(nxt.id); dirs.push(nxtDir);
+      visited.add(nxt.id);
+      curEndNode = nxtDir ? nxt.nodeChain[nxt.nodeChain.length-1] : nxt.nodeChain[0];
+    }
+
+    let curHeadNode = edge.nodeChain[0];
+    while(true){
+      const node = getNode(curHeadNode);
+      if(node && node.laneBranch) break;
+      const atNode = edgesAtNode(curHeadNode);
+      if(atNode.length !== 2) break;
+      const nxt = atNode.find(e2 => !visited.has(e2.id));
+      if(!nxt) break;
+      if(nxt.typeId !== edge.typeId) break;
+      const nxtDir = nxt.nodeChain[nxt.nodeChain.length-1] === curHeadNode;
+      edgeIds.unshift(nxt.id); dirs.unshift(nxtDir);
+      visited.add(nxt.id);
+      curHeadNode = nxtDir ? nxt.nodeChain[0] : nxt.nodeChain[nxt.nodeChain.length-1];
+    }
+
+    chains.push({ edgeIds, dirs, typeId: edge.typeId });
+  }
+  return chains;
+}
+
+function getEdgeChains(){
+  if(_chainCache === null || _chainCacheEpoch !== _graphEpoch){
+    _chainCache = buildEdgeChains();
+    _chainCacheEpoch = _graphEpoch;
+    _chainOfEdge = {};
+    for(const chain of _chainCache){
+      chain.edgeIds.forEach((eid,i) => { _chainOfEdge[eid] = { chain, dir: chain.dirs[i], index: i }; });
+    }
+  }
+  return _chainCache;
+}
+
+/* When a new road is drawn connecting onto an existing road of the same
+   type (a plain pass-through, not a real junction), it starts out as
+   its own empty, ungrouped road — so the lane-toggle menu treats it
+   separately and it can't visually match the road it's continuing.
+   This scans every chain and, if a chain contains an edge that's
+   already been customized (has a real group and/or extras) alongside
+   edges that are still fresh (never touched), copies the customized
+   edge's group and physically-oriented extras onto the fresh ones —
+   flipping left/right where an edge is stored in the reverse direction
+   — so the whole connected run behaves, and edits, as one road. Edges
+   the user has already customized are never overwritten. */
+function unifyChainMetadata(){
+  let changed = false;
+  for(const chain of getEdgeChains()){
+    if(chain.edgeIds.length < 2) continue;
+
+    const authIdx = chain.edgeIds.findIndex((id) => {
+      const e = getEdge(id);
+      return e && (e.group !== e.id || edgeHasExtras(e));
+    });
+    if(authIdx === -1) continue;
+
+    const authEdge = getEdge(chain.edgeIds[authIdx]);
+    const authGroup = edgeGroup(authEdge);
+    const authExtras = orientedExtras(authEdge, chain.dirs[authIdx]);
+
+    for(let i=0; i<chain.edgeIds.length; i++){
+      if(i === authIdx) continue;
+      const e = getEdge(chain.edgeIds[i]);
+      if(!e) continue;
+      const isFresh = (e.group === e.id) && !edgeHasExtras(e);
+      if(!isFresh) continue;
+
+      const flip = !chain.dirs[i];
+      e.group = authGroup;
+      e.extras = flip ? flipExtrasLR(authExtras) : cloneExtras(authExtras);
+      changed = true;
+    }
+  }
+  if(changed){ _graphEpoch++; _jrCache = {}; _nodeEdgeIndex = null; _chainCache = null; }
+}
+
+/* Maps each edge in a group to whether it's stored in the reverse
+   direction relative to the group's reference edge (edges[0]), using
+   chain membership to determine relative orientation. Edges not
+   chain-connected to the reference fall back to "not flipped" (matches
+   prior behavior for groups formed purely by splitting one edge, which
+   are always direction-consistent already). Used so the lane-toggle
+   menu reads/writes the correct PHYSICAL left/right regardless of which
+   piece of a connected road it's touching. */
+function edgeOrientationInGroup(edges){
+  getEdgeChains();
+  const flipMap = {};
+  if(!edges.length) return flipMap;
+  const refInfo = _chainOfEdge[edges[0].id];
+  edges.forEach(e => {
+    const info = _chainOfEdge[e.id];
+    flipMap[e.id] = !!(refInfo && info && info.chain === refInfo.chain && info.dir !== refInfo.dir);
+  });
+  return flipMap;
+}
+
+function chainOuterNodes(chain){
+  const firstE = getEdge(chain.edgeIds[0]);
+  const lastE  = getEdge(chain.edgeIds[chain.edgeIds.length-1]);
+  const startNode = chain.dirs[0] ? firstE.nodeChain[0] : firstE.nodeChain[firstE.nodeChain.length-1];
+  const endNode   = chain.dirs[chain.dirs.length-1] ? lastE.nodeChain[lastE.nodeChain.length-1] : lastE.nodeChain[0];
+  return { startNode, endNode, firstE, lastE };
+}
+
+/* Node id shared between edge k and edge k+1 within a chain, for each
+   internal joint (length = edgeIds.length-1). */
+function chainJointNodes(chain){
+  const out = [];
+  for(let k=0; k<chain.edgeIds.length-1; k++){
+    const e = getEdge(chain.edgeIds[k]);
+    const dir = chain.dirs[k];
+    out.push(dir ? e.nodeChain[e.nodeChain.length-1] : e.nodeChain[0]);
+  }
+  return out;
+}
+
+function sampleChainSpineWithBounds(edgeIds, dirs, steps){
+  const points = [];
+  const bounds = [0];
+  const jointIdx = [];
+  let accLen = 0;
+  for(let i=0; i<edgeIds.length; i++){
+    const e = getEdge(edgeIds[i]);
+    if(!e){ bounds.push(accLen); continue; }
+    let sp = sampleEdge(e, steps);
+    if(!dirs[i]) sp = [...sp].reverse();
+    let startIdx = 0;
+    if(points.length && sp.length && dist(points[points.length-1], sp[0]) < 0.01) startIdx = 1;
+    if(i > 0) jointIdx.push(points.length - 1);
+    for(let k=startIdx; k<sp.length; k++){
+      if(points.length) accLen += dist(points[points.length-1], sp[k]);
+      points.push(sp[k]);
+    }
+    bounds.push(accLen);
+  }
+  return { points, bounds, jointIdx };
+}
+
+/* Rounds the sharp corner at each internal chain joint into a smooth
+   arc (quadratic bezier using the corner point as control point),
+   matching the fillet radius drawJunctions() already gives the plain
+   road surface at the same node. This keeps lane markings, median
+   bands, and extra-lane bands curving through a bend instead of
+   mitering to a sharp point (which also caused the extra-lane bands to
+   self-intersect into a "bowtie" on tight turns). radiusFn receives the
+   joint's sequential index (0-based, matching jointIdx order). */
+function roundChainSpineJoints(points, jointIdx, radiusFn){
+  if(!jointIdx.length) return points;
+
+  const cum = [0];
+  for(let i=1; i<points.length; i++) cum.push(cum[i-1] + dist(points[i-1], points[i]));
+  const totalLen = cum[cum.length-1];
+
+  const radii = jointIdx.map((j,k) => Math.max(0, radiusFn(k)));
+  for(let k=0; k<jointIdx.length; k++){
+    const jIdx = jointIdx[k];
+    const prevBound = k>0 ? cum[jointIdx[k-1]] + radii[k-1] : 0;
+    const nextBound = k<jointIdx.length-1 ? cum[jointIdx[k+1]] - radii[k+1] : totalLen;
+    const maxBack = cum[jIdx] - prevBound;
+    const maxFwd  = nextBound - cum[jIdx];
+    radii[k] = Math.max(0, Math.min(radii[k], maxBack, maxFwd));
+  }
+
+  const out = [];
+  let cursor = 0;
+  for(let k=0; k<jointIdx.length; k++){
+    const jIdx = jointIdx[k], r = radii[k];
+    if(r < 0.75) continue;
+
+    const backTarget = cum[jIdx] - r, fwdTarget = cum[jIdx] + r;
+    let backPt = points[jIdx], backIdx = jIdx;
+    for(let i=jIdx; i>=1; i--){
+      if(cum[i-1] <= backTarget){
+        const segLen = cum[i]-cum[i-1];
+        const f = segLen>0 ? (backTarget-cum[i-1])/segLen : 0;
+        backPt = { x: points[i-1].x + f*(points[i].x-points[i-1].x), y: points[i-1].y + f*(points[i].y-points[i-1].y) };
+        backIdx = i-1;
+        break;
+      }
+    }
+    let fwdPt = points[jIdx], fwdIdx = jIdx;
+    for(let i=jIdx; i<points.length-1; i++){
+      if(cum[i+1] >= fwdTarget){
+        const segLen = cum[i+1]-cum[i];
+        const f = segLen>0 ? (fwdTarget-cum[i])/segLen : 0;
+        fwdPt = { x: points[i].x + f*(points[i+1].x-points[i].x), y: points[i].y + f*(points[i+1].y-points[i].y) };
+        fwdIdx = i+1;
+        break;
+      }
+    }
+
+    while(cursor <= backIdx){ out.push(points[cursor]); cursor++; }
+    out.push(backPt);
+    const corner = points[jIdx];
+    const STEPS = 10;
+    for(let s=1; s<STEPS; s++){
+      const t = s/STEPS, mt = 1-t;
+      out.push({
+        x: mt*mt*backPt.x + 2*mt*t*corner.x + t*t*fwdPt.x,
+        y: mt*mt*backPt.y + 2*mt*t*corner.y + t*t*fwdPt.y
+      });
+    }
+    out.push(fwdPt);
+    cursor = fwdIdx;
+  }
+  while(cursor < points.length){ out.push(points[cursor]); cursor++; }
+  return out;
+}
+
+/* Rounding radius for a chain joint, sized to match the fillet
+   drawJunctions() already applies to the plain road surface at the
+   same node, so markings/bands curve in step with the pavement. */
+function chainJointRadius(chain, jointNodeId, jointEdge, hw){
+  return junctionReach(jointNodeId, jointEdge.id, hw);
+}
+
+function sliceSpineByDist(spine, dStart, dEnd){
+  const out = [];
+  let acc = 0, started = false;
+  for(let i=0; i<spine.length; i++){
+    const segLen = i===0 ? 0 : dist(spine[i-1], spine[i]);
+    const prevAcc = acc;
+    acc += segLen;
+    if(!started && acc >= dStart){
+      const f = segLen > 0 ? (dStart - prevAcc) / segLen : 0;
+      if(i > 0) out.push({x:spine[i-1].x + f*(spine[i].x-spine[i-1].x), y:spine[i-1].y + f*(spine[i].y-spine[i-1].y)});
+      else out.push(spine[i]);
+      started = true;
+    }
+    if(started){
+      if(acc <= dEnd) out.push(spine[i]);
+      else {
+        const f = segLen > 0 ? (dEnd - prevAcc) / segLen : 0;
+        if(i > 0) out.push({x:spine[i-1].x + f*(spine[i].x-spine[i-1].x), y:spine[i-1].y + f*(spine[i].y-spine[i-1].y)});
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 function junctionRadius(nodeId){
   const edges = edgesAtNode(nodeId);
   if(edges.length < 2) return 0;
@@ -1098,6 +1400,16 @@ function drawJunctions(){
     if(!nodeInView(node)) continue;
     const edges = edgesAtNode(node.id);
     if(edges.length < 2) continue;
+
+    /* A plain 2-edge, same-type pass-through node is a chain-internal
+       joint: drawChainSurface() already draws the pavement through it
+       as one continuous, cleanly-rounded curve. Patching it again here
+       with the old "stroke a fan out-and-back" technique would draw a
+       differently-shaped (and occasionally bulging) curve on top of it.
+       Real junctions (3+ edges) and 2-edge nodes joining different road
+       types/widths still need this patch, so only pass-through same-type
+       nodes are skipped. */
+    if(edges.length === 2 && edges[0].typeId === edges[1].typeId && !(node.laneBranch)) continue;
 
     const arms = [];
     for(const edge of edges){
@@ -1396,7 +1708,7 @@ function strokeRoadSurface(spine, width, color){
 }
 
 function drawMedianBand(spine, halfWidth){
-  fillBand(spine, -halfWidth, halfWidth, TERRAIN_FILL.grass);
+  fillBand(spine, -halfWidth, halfWidth, TERRAIN_FILL.grass, false);
 }
 
 function drawEdgeBase(edge){
@@ -1404,22 +1716,91 @@ function drawEdgeBase(edge){
   const spine = sampleEdge(edge, 40);
   if(spine.length < 2) return;
   drawRoadSurface(spine, rt);
-  const ext = edgeExtraExtent(edgeExtras(edge));
-  if(ext.left>0||ext.right>0){
-    const hw = rt.width/2;
-    if(ext.right>0) fillBand(spine, hw, hw+ext.right, ROAD_SURFACE, false);
-    if(ext.left>0)  fillBand(spine, -(hw+ext.left), -hw, ROAD_SURFACE, false);
+
+}
+
+/* Base pavement surface, drawn once per chain using the same rounded
+   spine as the decorations/extras layers. Previously each edge stroked
+   its own surface independently (butt-capped, ending exactly at the
+   node) and drawJunctions() patched a separate "out and back" stroke
+   fan around the node to fill the gap — a different curve construction
+   than the clean bezier-rounded spine used for markings, which produced
+   a visible wobble/bulge in the pavement outline at a bend that the
+   lane markings didn't share. Using the identical rounded spine for the
+   pavement itself keeps the two in lockstep. drawJunctions() still
+   handles real junctions (3+ edges) and edges of differing width/type
+   meeting, which chains intentionally don't cover. */
+function drawChainSurface(chain){
+  const rt = getRoadType(chain.typeId);
+  const hw = rt.width/2;
+  const { points: rawPoints, jointIdx } = sampleChainSpineWithBounds(chain.edgeIds, chain.dirs, 40);
+  if(rawPoints.length < 2) return;
+
+  const jointNodes = chainJointNodes(chain);
+  const points = roundChainSpineJoints(rawPoints, jointIdx, k =>
+    chainJointRadius(chain, jointNodes[k], getEdge(chain.edgeIds[k]), hw)
+  );
+
+  strokeRoadSurface(points, rt.width, ROAD_SURFACE);
+}
+
+/* Extra-lane pavement widening (the paved strip beneath the colored
+   overlay), drawn once per matching-extras run across a whole chain so
+   the widened pavement doesn't notch where a same-type road continues
+   through a bend. Runs are grouped by physically-oriented extras (so
+   two edges with the same real-world lane setup merge even if one is
+   stored in the reverse direction), and the joint corners are rounded
+   to match the fillet drawJunctions() gives the plain pavement. Runs
+   use the untrimmed chain spine, matching the previous per-edge
+   behavior of extending pavement all the way to the node. */
+function drawChainExtSurface(chain){
+  const rt = getRoadType(chain.typeId);
+  const edgeIds = chain.edgeIds;
+  if(!edgeIds.some(id => edgeHasExtras(getEdge(id)))) return;
+
+  const hw = rt.width/2;
+  const { points: rawPoints, bounds, jointIdx } = sampleChainSpineWithBounds(edgeIds, chain.dirs, 40);
+  if(rawPoints.length < 2) return;
+
+  const jointNodes = chainJointNodes(chain);
+  const points = roundChainSpineJoints(rawPoints, jointIdx, k =>
+    chainJointRadius(chain, jointNodes[k], getEdge(edgeIds[k]), hw)
+  );
+
+  let i = 0;
+  while(i < edgeIds.length){
+    const e0 = getEdge(edgeIds[i]);
+    const ex0 = orientedExtras(e0, chain.dirs[i]);
+    const key0 = JSON.stringify(ex0);
+    let j = i;
+    while(j+1 < edgeIds.length && JSON.stringify(orientedExtras(getEdge(edgeIds[j+1]), chain.dirs[j+1])) === key0) j++;
+
+    const ext = edgeExtraExtent(ex0);
+    if(ext.left > 0 || ext.right > 0){
+      const dStart = bounds[i], dEnd = bounds[j+1];
+      if(dEnd - dStart > 0.5){
+        const subSpine = sliceSpineByDist(points, dStart, dEnd);
+        if(subSpine.length >= 2){
+          if(ext.right>0) fillBand(subSpine, hw, hw+ext.right, ROAD_SURFACE, false);
+          if(ext.left>0)  fillBand(subSpine, -(hw+ext.left), -hw, ROAD_SURFACE, false);
+        }
+      }
+    }
+    i = j+1;
   }
 }
 
-function drawEdgeExtraLanes(edge, spine, rt){
-  const extras = edgeExtras(edge);
+function drawExtraLaneBand(extras, spine, rt){
   let offR = rt.width/2, offL = rt.width/2;
   for(const t of EXTRA_LANE_TYPES){
     const sides = extras[t.id];
     if(sides.right){ fillBand(spine, offR, offR+t.width, t.color); offR += t.width; }
     if(sides.left){ fillBand(spine, -(offL+t.width), -offL, t.color); offL += t.width; }
   }
+}
+
+function drawEdgeExtraLanes(edge, spine, rt){
+  drawExtraLaneBand(edgeExtras(edge), spine, rt);
 }
 
 function drawRoadSurface(spine, rt){
@@ -1482,6 +1863,34 @@ function edgeDecorBounds(edge){
 
   const startJr = decorTrimRadius(edge, startNode, totalLen);
   const endJr   = decorTrimRadius(edge, endNode,   totalLen);
+
+  const tMin = startJr / totalLen;
+  const tMax = 1 - endJr / totalLen;
+
+  if(tMin >= tMax) return { tMin: 0.5, tMax: 0.5 };
+  return { tMin, tMax };
+}
+
+/* Same trimming logic as edgeDecorBounds, but measured against the
+   whole chain's combined length, and only trimmed at the chain's true
+   outer endpoints (a real junction or a dead end) — never at the
+   interior pass-through nodes where same-type edges were stitched
+   together. */
+function chainDecorBounds(chain, points){
+  const totalLen = polyLen(points);
+  if(totalLen < 1) return { tMin:0, tMax:1 };
+  const { startNode, endNode, firstE, lastE } = chainOuterNodes(chain);
+
+  if(edgesAtNode(startNode).length >= 3 && edgesAtNode(endNode).length >= 3){
+    const startRaw = crossingClearance(startNode, firstE.id) + 4;
+    const endRaw   = crossingClearance(endNode, lastE.id) + 4;
+    if((startRaw + endRaw) * CROSSWALK_CONNECTOR_SLACK >= totalLen){
+      return { tMin: 0.5, tMax: 0.5 };
+    }
+  }
+
+  const startJr = decorTrimRadius(firstE, startNode, totalLen);
+  const endJr   = decorTrimRadius(lastE, endNode, totalLen);
 
   const tMin = startJr / totalLen;
   const tMax = 1 - endJr / totalLen;
@@ -1605,6 +2014,67 @@ function drawLaneBranchTapers(){
     ctx.fillStyle = ROAD_SURFACE;
     ctx.fill();
   }
+}
+
+/* Colored extra-lane overlay (bus/bike/parking), drawn once per
+   matching-extras run across a chain so the band continues seamlessly
+   through a bend where a road connects to more of the same road,
+   instead of restarting at every edge boundary. Runs are grouped by
+   physically-oriented extras (so the same real-world lane setup merges
+   even when one edge is stored in the reverse direction) and clipped to
+   the chain's overall trim bounds so behavior at real junctions is
+   unchanged. */
+function drawChainExtraLaneRuns(chain, points, bounds, dMin, dMax, rt){
+  const edgeIds = chain.edgeIds;
+  let i = 0;
+  while(i < edgeIds.length){
+    const e0 = getEdge(edgeIds[i]);
+    const ex0 = orientedExtras(e0, chain.dirs[i]);
+    const key0 = JSON.stringify(ex0);
+    let j = i;
+    while(j+1 < edgeIds.length && JSON.stringify(orientedExtras(getEdge(edgeIds[j+1]), chain.dirs[j+1])) === key0) j++;
+
+    if(EXTRA_LANE_TYPES.some(t => ex0[t.id].left || ex0[t.id].right)){
+      const dStart = Math.max(dMin, bounds[i]);
+      const dEnd   = Math.min(dMax, bounds[j+1]);
+      if(dEnd - dStart > 0.5){
+        const subSpine = sliceSpineByDist(points, dStart, dEnd);
+        if(subSpine.length >= 2) drawExtraLaneBand(ex0, subSpine, rt);
+      }
+    }
+    i = j+1;
+  }
+}
+
+function drawChainDecorations(chain){
+  const rt = getRoadType(chain.typeId);
+  const edgeIds = chain.edgeIds;
+  const hasAnyExtras = edgeIds.some(id => edgeHasExtras(getEdge(id)));
+
+  if(!rt.twoWay && rt.lanes < 2 && !hasAnyExtras) return;
+
+  const { points: rawPoints, bounds, jointIdx } = sampleChainSpineWithBounds(edgeIds, chain.dirs, 60);
+  if(rawPoints.length < 2) return;
+
+  const { tMin, tMax } = chainDecorBounds(chain, rawPoints);
+  if(tMax - tMin < 0.05) return;
+
+  const hw = rt.width/2;
+  const jointNodes = chainJointNodes(chain);
+  const points = roundChainSpineJoints(rawPoints, jointIdx, k =>
+    chainJointRadius(chain, jointNodes[k], getEdge(edgeIds[k]), hw)
+  );
+
+  const totalLen = polyLen(points);
+  const dMin = totalLen * tMin, dMax = totalLen * tMax;
+
+  const spine = sliceSpineByDist(points, dMin, dMax);
+  if(spine.length >= 2){
+    if(rt.median) drawMedianBand(spine, rt.median/2);
+    if(rt.twoWay || rt.lanes >= 2) drawLaneMarkings(spine, rt);
+  }
+
+  if(hasAnyExtras) drawChainExtraLaneRuns(chain, points, bounds, dMin, dMax, rt);
 }
 
 function drawEdgeDecorations(edge){
@@ -2236,14 +2706,17 @@ EXTRA_LANE_TYPES.forEach(lt=>{
       const edges=roadGroupEdges(roadMenuGroup);
       if(!edges.length) return;
       saveUndo();
-      const cur=edgeExtras(edges[0])[lt.id];
-      const newVal=!cur[btn.dataset.side];
+      const flipMap = edgeOrientationInGroup(edges);
+      const refSide = btn.dataset.side;
+      const cur = edgeExtras(edges[0])[lt.id];
+      const newVal = !cur[refSide];
       edges.forEach(e=>{
         const ex=edgeExtras(e);
-        ex[lt.id][btn.dataset.side]=newVal;
+        const side = flipMap[e.id] ? (refSide==='left'?'right':'left') : refSide;
+        ex[lt.id][side]=newVal;
         e.extras=ex;
       });
-      _graphEpoch++;_jrCache={};_nodeEdgeIndex=null;
+      _graphEpoch++;_jrCache={};_nodeEdgeIndex=null;_chainCache=null;
       btn.classList.toggle('active',newVal);
       toast((newVal?'Added ':'Removed ')+lt.label.toLowerCase()+' ('+btn.dataset.side+')');
     });
@@ -2255,7 +2728,9 @@ function openRoadMenu(edge,sx,sy){
   roadMenuGroup=edgeGroup(edge);
   rmTitle.textContent=edge.name||'Unnamed road';
   [...rmTypes.children].forEach(btn=>btn.classList.toggle('active',btn.dataset.typeId===edge.typeId));
-  const extras=edgeExtras(edge);
+  const groupEdges = roadGroupEdges(roadMenuGroup);
+  const flipMap = edgeOrientationInGroup(groupEdges);
+  const extras = flipMap[edge.id] ? flipExtrasLR(edgeExtras(edge)) : edgeExtras(edge);
   [...rmExtras.children].forEach(row=>{
     const sides=extras[row.dataset.laneId];
     [...row.querySelectorAll('.side-btn')].forEach(btn=>btn.classList.toggle('active',!!sides[btn.dataset.side]));
@@ -3494,16 +3969,20 @@ function loop(){
   ctx.scale(zoom,zoom);
 
   const edges=allEdges().filter(edgeInView);
+  const visibleChains = getEdgeChains().filter(ch =>
+    ch.edgeIds.some(id => { const e=getEdge(id); return e && edgeInView(e); })
+  );
 
   drawParks();
 
-  edges.forEach(e=>drawEdgeBase(e));
+  visibleChains.forEach(ch=>drawChainSurface(ch));
+  visibleChains.forEach(ch=>drawChainExtSurface(ch));
 
   drawJunctions();
 
   drawLaneBranchTapers();
 
-  edges.forEach(e=>drawEdgeDecorations(e));
+  visibleChains.forEach(ch=>drawChainDecorations(ch));
 
   drawCrosswalks();
 
