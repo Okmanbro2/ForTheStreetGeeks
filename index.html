@@ -155,14 +155,18 @@
   }
   #roadMenu .road-btn{padding:5px 7px;}
   #roadMenu .road-btn .preview{width:32px;height:20px;}
-  #placesBtn{
-    background:#fff;border:none;border-radius:999px;padding:6px 14px;
-    font-family:'DM Mono',monospace;font-size:11px;color:#555;cursor:pointer;
-    box-shadow:0 2px 16px rgba(0,0,0,.10);transition:all .1s;
+  #topRightTools{
     position:fixed;top:16px;right:16px;z-index:100;
-    display:flex;align-items:center;gap:6px;
+    display:flex;align-items:center;gap:8px;
   }
-  #placesBtn:hover{background:#f0f0f0;}
+  #topRightTools > button{
+    background:#fff;border:none;border-radius:999px;padding:7px 10px;
+    font-family:'DM Mono',monospace;font-size:12px;color:#555;cursor:pointer;
+    box-shadow:0 2px 16px rgba(0,0,0,.10);transition:all .1s;
+    display:flex;align-items:center;justify-content:center;line-height:1;
+  }
+  #topRightTools > button:hover{background:#f0f0f0;}
+  #numberBtn.active{background:#4a80f5;color:#fff;}
   #placesPanel{
     position:fixed;top:60px;right:16px;z-index:250;display:none;
     flex-direction:column;overflow:hidden;
@@ -185,16 +189,8 @@
   .place-item .place-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .place-item .place-kind{font-family:'DM Mono',monospace;font-size:9px;color:#bbb;flex-shrink:0;}
   .places-empty{padding:14px 10px;color:#aaa;font-size:12px;text-align:center;}
-  #exportBtn{
-    background:#fff;border:none;border-radius:999px;padding:6px 14px;
-    font-family:'DM Mono',monospace;font-size:11px;color:#555;cursor:pointer;
-    box-shadow:0 2px 16px rgba(0,0,0,.10);transition:all .1s;
-    position:fixed;top:16px;right:112px;z-index:100;
-    display:flex;align-items:center;gap:6px;
-  }
-  #exportBtn:hover{background:#f0f0f0;}
   #exportPanel{
-    position:fixed;top:60px;right:112px;z-index:250;display:none;
+    position:fixed;top:60px;right:16px;z-index:250;display:none;
     flex-direction:column;overflow:hidden;
     background:#fff;border-radius:14px;
     box-shadow:0 6px 28px rgba(0,0,0,.16),0 1px 4px rgba(0,0,0,.08);
@@ -236,6 +232,54 @@
   .export-action-btn.secondary{background:#f0f0f0;color:#444;}
   .export-action-btn.secondary:hover{background:#e4e4e4;}
   #printExportRoot{display:none;}
+  #numberPanel{
+    position:fixed;top:60px;right:16px;z-index:250;display:none;
+    flex-direction:column;overflow:hidden;
+    background:#fff;border-radius:14px;
+    box-shadow:0 6px 28px rgba(0,0,0,.16),0 1px 4px rgba(0,0,0,.08);
+    width:250px;font-family:'DM Sans',sans-serif;
+  }
+  #numberPanel .zm-title{margin-bottom:0;}
+  .np-row{padding:9px 12px;border-bottom:1px solid #f5f5f5;}
+  .np-row:last-child{border-bottom:none;}
+  .np-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;}
+  .np-toggle-row .np-label{font-size:12.5px;font-weight:500;color:#333;}
+  .np-switch{
+    width:36px;height:20px;border-radius:999px;background:#e2e2e2;position:relative;
+    cursor:pointer;border:none;transition:background .15s;flex-shrink:0;
+  }
+  .np-switch::after{
+    content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+    background:#fff;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.25);
+  }
+  .np-switch.on{background:#4a80f5;}
+  .np-switch.on::after{left:18px;}
+  .np-sub{font-size:10.5px;color:#aaa;line-height:1.4;margin-top:2px;}
+  .np-btn{
+    width:100%;text-align:left;padding:8px 10px;border-radius:8px;border:1.5px solid #eee;
+    background:#fafafa;font-family:'DM Sans',sans-serif;font-size:12px;color:#333;cursor:pointer;
+    transition:all .12s;
+  }
+  .np-btn:hover{background:#f0f0f0;}
+  .np-btn.picking{background:#e8f0fe;border-color:#4a80f5;color:#4a80f5;}
+  .np-baseline-status{font-size:11px;color:#888;margin-top:6px;line-height:1.4;}
+  .np-baseline-status b{color:#333;}
+  .np-fields{display:flex;gap:8px;margin-top:8px;}
+  .np-field{flex:1;}
+  .np-field label{display:block;font-size:9.5px;color:#aaa;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+  .np-field input{
+    width:100%;border:1.5px solid #eee;border-radius:7px;padding:5px 7px;
+    font-family:'DM Sans',sans-serif;font-size:12px;color:#333;outline:none;
+  }
+  .np-field input:focus{border-color:#4a80f5;}
+  .np-flip{
+    display:flex;align-items:center;justify-content:space-between;margin-top:8px;
+  }
+  .np-flip button{
+    font-family:'DM Mono',monospace;font-size:10.5px;color:#888;background:#f5f5f5;
+    border:none;border-radius:6px;padding:4px 8px;cursor:pointer;
+  }
+  .np-flip button:hover{background:#eee;}
   @media print{
     body>*:not(#printExportRoot){display:none!important;}
     #printExportRoot{display:block!important;position:static;width:100%;}
@@ -291,12 +335,15 @@
   <div id="rmExtras"></div>
   <button class="zm-item zm-danger" id="rmDelete">🗑&nbsp; Delete road</button>
 </div>
-<button id="placesBtn">🔍&nbsp; Find <span class="key-badge" style="margin-left:2px;">F</span></button>
+<div id="topRightTools">
+  <button id="numberBtn" title="Numbered streets (B)">🔢</button>
+  <button id="exportBtn" title="Export (E)">🖼</button>
+  <button id="placesBtn" title="Find (F)">🔍</button>
+</div>
 <div id="placesPanel">
   <input id="placesSearch" type="text" placeholder="Search districts &amp; roads…"/>
   <div id="placesList"></div>
 </div>
-<button id="exportBtn">🖼&nbsp; Export <span class="key-badge" style="margin-left:2px;">E</span></button>
 <div id="exportPanel">
   <div class="zm-title">Export map</div>
   <button class="zm-item" id="expWholeMap">🗺&nbsp; Whole map</button>
@@ -304,6 +351,36 @@
   <button class="zm-item" id="expPickZone">◆&nbsp; Export a district…</button>
   <div id="exportZoneList"></div>
   <div class="export-hint" id="exportZoneHint" style="display:none;">Pick a district to export</div>
+</div>
+<div id="numberPanel">
+  <div class="np-toggle-row">
+    <div>
+      <div class="np-label">Numbered Mode</div>
+      <div class="np-sub">Auto-name new roads</div>
+    </div>
+    <button class="np-switch" id="npToggle"></button>
+  </div>
+  <div class="np-row" id="npBaselineRow">
+    <button class="np-btn" id="npSetBaseline">📍&nbsp; Set dividing line</button>
+    <div class="np-baseline-status" id="npBaselineStatus">Optional — new roads will just be "5th St" etc. Set a dividing line to get E/W or N/S prefixes.</div>
+    <div class="np-flip" id="npFlipRow" style="display:none;">
+      <span class="np-sub" style="margin-top:0;">Sides backwards?</span>
+      <button id="npFlip">⇄ Flip E/W</button>
+    </div>
+  </div>
+  <div class="np-row">
+    <div class="np-fields">
+      <div class="np-field">
+        <label>Start #</label>
+        <input type="number" id="npStart" min="1" value="1"/>
+      </div>
+      <div class="np-field">
+        <label>Suffix</label>
+        <input type="text" id="npSuffix" maxlength="8" value="St"/>
+      </div>
+    </div>
+    <div class="np-sub">Next road will be named automatically as you draw.</div>
+  </div>
 </div>
 <div id="exportModal">
   <div id="exportModalCard">
@@ -785,6 +862,7 @@ function commitBuild(name){
   _jrCache = {}; _nodeEdgeIndex = null; _chainCache = null;
   unifyChainMetadata();
   build=null;
+  return newEdgeId;
 }
 
 function hardConnectEndpoints(edgeId){
@@ -2245,6 +2323,63 @@ const LABEL_PALETTE=['#3a3a3a','#4a7c3f','#2a7a72','#a1631d','#6b4a8a','#a13a5c'
 
 let exportAreaMode=false, exportAreaPts=[];
 
+let numberedMode=false, baselinePickMode=false;
+let numberedBaseline=null; // {p0:{x,y}, dir:{x,y}, labels:{pos,neg}, flipped:bool}
+let numberedNext=1, numberedSuffix='St';
+
+function ordinal(n){
+  n=Math.max(1,Math.round(n));
+  const rem100=n%100;
+  if(rem100>=11&&rem100<=13) return n+'th';
+  switch(n%10){
+    case 1: return n+'st';
+    case 2: return n+'nd';
+    case 3: return n+'rd';
+    default: return n+'th';
+  }
+}
+
+function setNumberedBaselineFromEdge(edge){
+  const chain=edge.nodeChain;
+  const a=getNode(chain[0]), b=getNode(chain[chain.length-1]);
+  if(!a||!b) return false;
+  const dir={x:b.x-a.x,y:b.y-a.y};
+  if(Math.hypot(dir.x,dir.y)<1) return false;
+  const vertical=Math.abs(dir.y)>=Math.abs(dir.x);
+  numberedBaseline={
+    p0:{x:a.x,y:a.y}, dir,
+    labels: vertical ? {pos:'E',neg:'W'} : {pos:'N',neg:'S'},
+    flipped:false
+  };
+  return true;
+}
+
+function numberedSideAt(px,py){
+  if(!numberedBaseline) return null;
+  const {p0,dir,labels,flipped}=numberedBaseline;
+  const cross=dir.x*(py-p0.y)-dir.y*(px-p0.x);
+  const pos = cross>=0 ? labels.pos : labels.neg;
+  const neg = cross>=0 ? labels.neg : labels.pos;
+  return flipped ? neg : pos;
+}
+
+function updateNumberPanelUI(){
+  npToggle.classList.toggle('on',numberedMode);
+  numberBtn.classList.toggle('active',numberedMode);
+  npBaselineRow.style.display=numberedMode?'block':'none';
+  if(numberedBaseline){
+    npBaselineStatus.innerHTML='Dividing line set — sides are <b>'+numberedBaseline.labels.pos+'</b> / <b>'+numberedBaseline.labels.neg+'</b>.';
+    npFlipRow.style.display='flex';
+    npSetBaseline.textContent='📍  Change dividing line';
+  } else {
+    npBaselineStatus.textContent='Optional — new roads will just be "5th St" etc. Set a dividing line to get E/W or N/S prefixes.';
+    npFlipRow.style.display='none';
+    npSetBaseline.textContent='📍  Set dividing line (optional)';
+  }
+  npSetBaseline.classList.toggle('picking',baselinePickMode);
+  npStart.value=numberedNext;
+}
+
 let zoneEditMode=false, zoneEditZone=null, zoneEditDrag=-1, zoneEditUndoSaved=false;
 
 let zoneMenuTarget=null, suppressNextZoneClick=false;
@@ -2360,7 +2495,12 @@ function toast(msg){
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastEl.classList.remove('show'),2000);
 }
 function updateTopbar(){
-  if(exportAreaMode){
+  if(baselinePickMode){
+    modePill.className='mode-pill';modePill.style.background='#4a80f5';modePill.style.color='#fff';
+    modePill.textContent='DIVIDING LINE';
+    modeLabel.textContent='Click a road to use as baseline';
+    modeHint.textContent='CLICK a road=set dividing line · ESC=cancel';
+  } else if(exportAreaMode){
     modePill.className='mode-pill';modePill.style.background='#2a9d8f';modePill.style.color='#fff';
     modePill.textContent='EXPORT AREA';
     modeLabel.textContent=exportAreaPts.length+' pt'+(exportAreaPts.length!==1?'s':'');
@@ -2405,7 +2545,7 @@ function updateTopbar(){
   } else {
     modePill.className='mode-pill';modePill.style.background='';modePill.style.color='';
     modePill.textContent='NAVIGATE';modeLabel.textContent='STREET GEEK';
-    modeHint.textContent='SPACE=build · WASD=pan · I/O/scroll=zoom · L=terrain · N=zone · M=label · F=find · dbl-click road=retype · Ctrl+Z/Y';
+    modeHint.textContent='SPACE=build · WASD=pan · I/O/scroll=zoom · L=terrain · N=zone · M=label · F=find · B=numbered · dbl-click road=retype · Ctrl+Z/Y';
   }
   zoomLabel.textContent=Math.round(zoom*100)+'%';
   btnUndo.disabled=undoStack.length===0;
@@ -2845,7 +2985,7 @@ function renderPlaces(filter){
 }
 
 function openPlaces(){
-  closeZoneMenu();closeRoadMenu();
+  closeZoneMenu();closeRoadMenu();closeNumberPanel();
   placesOpen=true;
   placesPanel.style.display='flex';
   placesSearch.value='';
@@ -2858,7 +2998,7 @@ function closePlaces(){
 }
 function togglePlaces(){ placesOpen?closePlaces():openPlaces(); }
 
-placesBtn.addEventListener('click',togglePlaces);
+placesBtn.addEventListener('click',()=>{ baselinePickMode=false; updateNumberPanelUI(); togglePlaces(); });
 placesSearch.addEventListener('input',()=>renderPlaces(placesSearch.value));
 placesSearch.addEventListener('keydown',e=>{
   e.stopPropagation(); 
@@ -3283,8 +3423,67 @@ const expPrintPdf=document.getElementById('expPrintPdf');
 const printExportRoot=document.getElementById('printExportRoot');
 let exportPanelOpen=false, exportZoneListOpen=false, lastExportSVG=null;
 
+const numberBtn=document.getElementById('numberBtn');
+const numberPanel=document.getElementById('numberPanel');
+const npToggle=document.getElementById('npToggle');
+const npBaselineRow=document.getElementById('npBaselineRow');
+const npBaselineStatus=document.getElementById('npBaselineStatus');
+const npFlipRow=document.getElementById('npFlipRow');
+const npSetBaseline=document.getElementById('npSetBaseline');
+const npFlip=document.getElementById('npFlip');
+const npStart=document.getElementById('npStart');
+const npSuffix=document.getElementById('npSuffix');
+let numberPanelOpen=false;
+
+function openNumberPanel(){ closePlaces();closeExportPanel();numberPanelOpen=true;numberPanel.style.display='flex';updateNumberPanelUI(); }
+function closeNumberPanel(){ numberPanelOpen=false; numberPanel.style.display='none'; }
+function toggleNumberPanel(){ numberPanelOpen?closeNumberPanel():openNumberPanel(); }
+
+numberBtn.addEventListener('click',toggleNumberPanel);
+
+npToggle.addEventListener('click',()=>{
+  numberedMode=!numberedMode;
+  baselinePickMode=false;
+  toast(numberedMode?'Numbered mode on':'Numbered mode off');
+  updateNumberPanelUI();updateTopbar();
+});
+
+npSetBaseline.addEventListener('click',()=>{
+  baselinePickMode=!baselinePickMode;
+  if(baselinePickMode){
+    buildMode=false;build=null;zoneMode=false;parkMode=false;labelMode=false;labelMoveTarget=null;
+    currentZone=null;zoneFreePts=[];currentTerrain=null;terrainFreePts=[];exportAreaMode=false;exportAreaPts=[];
+    closeNumberPanel();
+    toast('Click a road to set as the dividing line');
+  }
+  updateNumberPanelUI();updateTopbar();
+});
+
+npFlip.addEventListener('click',()=>{
+  if(!numberedBaseline) return;
+  numberedBaseline.flipped=!numberedBaseline.flipped;
+  toast('Sides flipped');
+  updateNumberPanelUI();
+});
+
+npStart.addEventListener('change',()=>{
+  const v=parseInt(npStart.value,10);
+  numberedNext = (isFinite(v)&&v>0) ? v : 1;
+  npStart.value=numberedNext;
+});
+npSuffix.addEventListener('change',()=>{
+  numberedSuffix = npSuffix.value.trim() || 'St';
+  npSuffix.value=numberedSuffix;
+});
+
+document.addEventListener('mousedown',e=>{
+  if(!numberPanelOpen) return;
+  if(numberPanel.contains(e.target)||e.target===numberBtn) return;
+  closeNumberPanel();
+});
+
 function openExportPanel(){
-  closePlaces();
+  closePlaces();closeNumberPanel();
   exportPanelOpen=true;
   exportPanel.style.display='flex';
   exportZoneListOpen=false;exportZoneList.innerHTML='';exportZoneHint.style.display='none';
@@ -3338,7 +3537,7 @@ document.addEventListener('mousedown',e=>{
     closeExportPanel();
   }
 });
-exportBtn.addEventListener('click',toggleExportPanel);
+exportBtn.addEventListener('click',()=>{ baselinePickMode=false; updateNumberPanelUI(); toggleExportPanel(); });
 
 function finishExportArea(){
   const pts=exportAreaPts;
@@ -3373,9 +3572,55 @@ expPrintPdf.addEventListener('click',()=>{
   requestAnimationFrame(()=>window.print());
 });
 
+function edgeCentroid(edge){
+  let sx=0,sy=0,c=0;
+  edge.nodeChain.forEach(nid=>{ const n=getNode(nid); if(n){sx+=n.x;sy+=n.y;c++;} });
+  return c ? {x:sx/c,y:sy/c} : {x:0,y:0};
+}
+
+function applyNumberedSplitNaming(groupId,num){
+  const pieces=roadGroupEdges(groupId);
+  const names=new Set();
+  pieces.forEach(e=>{
+    const c=edgeCentroid(e);
+    const side=numberedSideAt(c.x,c.y);
+    const name=side+' '+ordinal(num)+' '+numberedSuffix;
+    e.name=name;
+    names.add(name);
+  });
+  return [...names];
+}
+
 function finishBuild(){
   if(!build||build.stops.length<2){cancelBuild();return;}
   const snap=build;
+
+  if(numberedMode){
+    const num=numberedNext;
+    build=snap;
+
+    if(numberedBaseline){
+      const placeholder=ordinal(num)+' '+numberedSuffix;
+      const newEdgeId=commitBuild(placeholder);
+      build=null;
+      let namesUsed=[placeholder];
+      if(newEdgeId){
+        namesUsed=applyNumberedSplitNaming(newEdgeId,num);
+      }
+      toast('Road placed: '+namesUsed.join(' / '));
+    } else {
+      const name=ordinal(num)+' '+numberedSuffix;
+      commitBuild(name);
+      build=null;
+      toast('Road placed: '+name);
+    }
+
+    numberedNext++;
+    if(numberPanelOpen) npStart.value=numberedNext;
+    updateTopbar();
+    return;
+  }
+
   build=null;
   openNameInput('Street name (Enter to confirm)','',name=>{
     if(name===null){return;}
@@ -3686,10 +3931,12 @@ document.addEventListener('keydown',e=>{
   if(e.key==='q'||e.key==='Q'){toggleLanes();return;}
   if(e.key==='f'||e.key==='F'){e.preventDefault();togglePlaces();return;}
   if(e.key==='e'||e.key==='E'){toggleExportPanel();return;}
+  if(e.key==='b'||e.key==='B'){toggleNumberPanel();return;}
   if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undo();return;}
   if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.shiftKey&&e.key==='Z'))){e.preventDefault();redo();return;}
   if(e.key===' '){
     e.preventDefault();
+    baselinePickMode=false;
     if(exportAreaMode){exportAreaMode=false;exportAreaPts=[];}
     if(buildMode&&build&&build.stops.length>=2) finishBuild();
     else if(buildMode&&!build){buildMode=false;toast('Navigate mode');}
@@ -3697,6 +3944,7 @@ document.addEventListener('keydown',e=>{
     updateTopbar();
   }
   if(e.key==='Escape'){
+    if(baselinePickMode){baselinePickMode=false;updateNumberPanelUI();updateTopbar();return;}
     if(placesOpen){closePlaces();return;}
     if(exportPanel.style.display==='flex'){closeExportPanel();return;}
     if(exportModal.style.display==='flex'){closeExportModal();return;}
@@ -3721,11 +3969,11 @@ document.addEventListener('keydown',e=>{
   }
   if(e.key==='i'||e.key==='I'){zoom=Math.min(zoom*1.15,6);updateTopbar();}
   if(e.key==='o'||e.key==='O'){zoom=Math.max(zoom/1.15,0.1);updateTopbar();}
-  if(e.key==='l'||e.key==='L'){parkMode=!parkMode;currentTerrain=null;terrainFreePts=[];if(parkMode){buildMode=false;build=null;zoneMode=false;labelMode=false;labelMoveTarget=null;exportAreaMode=false;exportAreaPts=[];}toast(parkMode?'Terrain mode':'Navigate mode');updateTopbar();}
+  if(e.key==='l'||e.key==='L'){parkMode=!parkMode;currentTerrain=null;terrainFreePts=[];if(parkMode){baselinePickMode=false;buildMode=false;build=null;zoneMode=false;labelMode=false;labelMoveTarget=null;exportAreaMode=false;exportAreaPts=[];}toast(parkMode?'Terrain mode':'Navigate mode');updateTopbar();}
   if((e.key==='t'||e.key==='T')&&parkMode){const idx=TERRAIN_TYPES.indexOf(terrainType);terrainType=TERRAIN_TYPES[(idx+1)%TERRAIN_TYPES.length];toast('Terrain: '+terrainType);updateTopbar();}
-  if(e.key==='n'||e.key==='N'){zoneMode=!zoneMode;if(zoneMode){buildMode=false;build=null;parkMode=false;labelMode=false;labelMoveTarget=null;currentTerrain=null;terrainFreePts=[];currentZone=null;exportAreaMode=false;exportAreaPts=[];}toast(zoneMode?'Zone mode':'Navigate mode');updateTopbar();}
+  if(e.key==='n'||e.key==='N'){zoneMode=!zoneMode;if(zoneMode){baselinePickMode=false;buildMode=false;build=null;parkMode=false;labelMode=false;labelMoveTarget=null;currentTerrain=null;terrainFreePts=[];currentZone=null;exportAreaMode=false;exportAreaPts=[];}toast(zoneMode?'Zone mode':'Navigate mode');updateTopbar();}
   if(e.key==='z'||e.key==='Z'){zonesVisible=!zonesVisible;toast(zonesVisible?'Zones visible':'Zones hidden');}
-  if(e.key==='m'||e.key==='M'){labelMode=!labelMode;labelMoveTarget=null;if(labelMode){buildMode=false;build=null;zoneMode=false;parkMode=false;currentZone=null;zoneFreePts=[];currentTerrain=null;terrainFreePts=[];exportAreaMode=false;exportAreaPts=[];}toast(labelMode?'Label mode':'Navigate mode');updateTopbar();}
+  if(e.key==='m'||e.key==='M'){labelMode=!labelMode;labelMoveTarget=null;if(labelMode){baselinePickMode=false;buildMode=false;build=null;zoneMode=false;parkMode=false;currentZone=null;zoneFreePts=[];currentTerrain=null;terrainFreePts=[];exportAreaMode=false;exportAreaPts=[];}toast(labelMode?'Label mode':'Navigate mode');updateTopbar();}
   if(e.key==='Shift') zoneShiftDown=true;
 });
 
@@ -3844,6 +4092,19 @@ canvas.addEventListener('contextmenu',e=>{
 canvas.addEventListener('click',e=>{
   if(suppressNextZoneClick){suppressNextZoneClick=false;return;}
   if(zoneEditMode) return; 
+  if(baselinePickMode){
+    const w=screenToWorld(e.clientX,e.clientY);
+    const edge=hitTestRoad(w.x,w.y);
+    if(edge && setNumberedBaselineFromEdge(edge)){
+      baselinePickMode=false;
+      toast('Dividing line set: '+numberedBaseline.labels.pos+' / '+numberedBaseline.labels.neg);
+      openNumberPanel();
+      updateTopbar();
+    } else {
+      toast('Click directly on a road');
+    }
+    return;
+  }
   if(exportAreaMode){
     const w=screenToWorld(e.clientX,e.clientY);
     if(!exportAreaPts.length){exportAreaPts.push({x:w.x,y:w.y});updateTopbar();return;}
@@ -3902,7 +4163,7 @@ canvas.addEventListener('click',e=>{
 
 canvas.addEventListener('dblclick',e=>{
 
-  if(buildMode||zoneMode||parkMode||zoneEditMode||exportAreaMode||labelMode) return;
+  if(buildMode||zoneMode||parkMode||zoneEditMode||exportAreaMode||labelMode||baselinePickMode) return;
   const w=screenToWorld(e.clientX,e.clientY);
 
   const edge=hitTestRoad(w.x,w.y);
